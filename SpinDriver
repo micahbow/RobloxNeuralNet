@@ -1,0 +1,49 @@
+-- Place this script in ServerScriptService
+
+-- Sample driver for a simple spinning arm object attached to a fixed point via HingeConstraint configured as a motor
+
+local Motor = game.Workspace.SpinnyPartMotor
+local Arm = game.Workspace.SpinnyPart
+Arm.Orientation = Vector3.new(0,0,0)
+local ResetBool = game.Workspace.ResetBool
+local aware = false
+local xIndex = 0
+local StartBool = game.Workspace.StartBool
+StartBool.Value = true
+ResetBool.Value = false
+-- Whenever the reset bool is set to true, reset the spinner and clear flag
+ResetBool.Changed:Connect(function()
+	if not aware and ResetBool.Value then
+		aware = true
+		Arm.CanTouch = false
+		ResetBool.Value = false;
+		xIndex = 0
+		Arm.Orientation = Vector3.new(0,0,0)
+		wait(1)
+		aware = false
+		Arm.CanTouch = true
+	end
+end)
+
+local function calculateVelocity(index)
+	local value = (12-math.exp(-0.01*(index-200)))
+	if value<0 then return 0 else return value end
+end
+
+Arm.Touched:Connect(function(toucher)
+	if toucher.Parent and toucher.Parent:FindFirstChild("Humanoid") and not toucher.Parent.Hit.Value then
+		toucher.Parent.Hit.Value = true
+	end
+end)
+
+spawn(function()
+	while(true) do
+		if (StartBool.Value) then
+			Motor.HingeConstraint.AngularVelocity = calculateVelocity(xIndex)
+			xIndex += 0.1
+		else
+			Motor.HingeConstraint.AngularVelocity = calculateVelocity(xIndex)
+		end
+		wait(0)
+	end
+end)
