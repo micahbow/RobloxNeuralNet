@@ -1,0 +1,191 @@
+-- Module script for Neural Network creation, mutation, generation, rendering, and evaluation
+-- Micah Bowonthamachakr @micahbow 
+-- October 2022
+local NNModule = {}
+
+NNModule.NN = {}
+NNModule.NN.__index = NNModule.NN
+
+local SCALE_CONSTANT = 3.5
+local NN = NNModule.NN
+
+-- Constructs an NN given nodes and connections arrays --
+function NNModule.NN.new(name,nodesArray,connectionsArray,origin,visible)
+	local newNN = {}
+	setmetatable(newNN, NN)
+	-- Array of array of numbers representing layers with nodes' weights in each
+	newNN.Nodes = nodesArray
+	-- Array of array of array of numbers representing layers with each nodes' connection to the next layer node
+	-- The 3rd level array should always correspond to the number of nodes in the next layer
+	newNN.Connections = connectionsArray
+	-- NN Name
+	newNN.Name = name
+	-- Generate and Store Physical model of NN
+	newNN.PhysicalModelFolder = newNN:Render(origin,SCALE_CONSTANT)
+	-- NN Physical Origin
+	newNN.Origin = origin
+	newNN.Visible = visible
+	return newNN
+end
+
+-- Constructs an NN with specified hidden layers and nodes per layer --
+function NNModule.NN.newRandom(name,numInputs,numOutputs,maxHiddenLayers,maxNodesPerLayer,origin,visible)
+	-- Two layers reserved for input and output layers
+	local numLayers = math.random(2,maxHiddenLayers+2)
+
+	-- Generate nodesArray
+
+	-- Fill in sum values for input nodes
+	local nodesArray = {{}}
+	for i=1,numInputs,1 do
+		table.insert(nodesArray[1],0) 
+	end
+
+	-- Fill in sum values for randomly generated hidden layer nodes
+	for i=2,numLayers-1,1 do
+		table.insert(nodesArray,{})
+		for j=1,math.random(1,maxNodesPerLayer),1 do
+			table.insert(nodesArray[i],0)
+		end
+	end
+
+	-- Fill in sum values for output nodes
+	table.insert(nodesArray,{})
+	for i=1,numOutputs,1 do
+		table.insert(nodesArray[numLayers],0) 
+	end
+
+	-- Generate connectionsArray
+	local connectionsArray = {}
+	for i=1,numLayers-1,1 do
+		-- Insert a sub-table corresponding to a connection layer
+		table.insert(connectionsArray,{})
+		-- For each source node in the layer, create a randomized connection array to dest nodes in the next
+		for j=1,#nodesArray[i],1 do
+			table.insert(connectionsArray[i],{})
+			for k=1,#nodesArray[i+1],1 do
+				table.insert(connectionsArray[i][j],NN:ScaleZPtoNP(math.random()))
+			end
+		end
+	end
+
+	return NN.new(name,nodesArray,connectionsArray,origin,visible)
+end
+
+-- Constructs an NN with specified hidden layers and nodes per layer --
+function NNModule.NN.newCopy(original)
+	return NN.new(original.Name,original.Nodes,original.Connections,original.Origin,original.Visible)
+end
+
+-- Randomly mutate a connection weight --
+function NNModule.NN:Mutate()	
+	local selectedLayer = math.random(1,#self.Connections)
+	local selectedNode = math.random(1,#self.Connections[selectedLayer])
+	local selectedConnection = math.random(1,#self.Connections[selectedLayer][selectedNode])
+	self.Connections[selectedLayer][selectedNode][selectedConnection] = NN:ScaleZPtoNP(math.random())
+end
+
+-- Sigmoid activation function --
+function NNModule.NN:Sigmoid(input)
+	return 1/(1+math.exp(-4*(input)))
+end
+
+-- Scales [-1,1] to [0,1] --
+function NNModule.NN:ScaleNPToZP(input)
+	return (input+1)/2
+end
+
+-- Scales [0,1] to [-1,1] --
+function NNModule.NN:ScaleZPtoNP(input)
+	return input*2-1
+end
+
+-- Forward propagate an input through the NN and produce an output --
+function NNModule.NN:ForwardPropgate(input)
+	-- Load inputs into input nodes
+	for i=1,#self.Nodes[1],1 do
+		self.Nodes[1][i] = NN:Sigmoid(input[i])
+	end
+	-- Clear previous nodes
+	for i=2,#self.Nodes,1 do
+		for j=1,#self.Nodes[i],1 do
+			self.Nodes[i][j] = 0
+		end
+	end
+
+	-- For each layer,
+	for i=1,#self.Nodes-1,1 do
+		-- For each source node,
+		for j=1,#self.Nodes[i],1 do
+			-- For each connection corresponding to a destination node,
+			for k=1,#self.Connections[i][j],1 do
+				-- Normalize source node value via sigmoid and accumulate to destination
+				self.Nodes[i+1][k] += NN:Sigmoid(self.Nodes[i][j])*self.Connections[i][j][k]
+			end
+		end
+	end
+	local output = {self.Nodes[#self.Nodes]}
+	self.PhysicalModelFolder = self:Render(self.Origin,SCALE_CONSTANT)
+
+	return output
+end
+
+-- Render a physical model of the NN --
+function NNModule.NN:Render(origin,scale)
+	if(not self.Visible) then
+		return
+	end
+	if self.PhysicalModelFolder ~= nil then
+		self.PhysicalModelFolder:Destroy()
+	end
+	local xOffset = 0
+	local zOffset = 0
+	local folder = Instance.new("Folder",game.Workspace.NNModels)
+	folder.Name = self.Name .. "_model"
+	local physicalNodes = {}
+	local physicalConnectons = {}
+	-- Generate layers
+	for layer=1,#self.Nodes,1 do
+		local layerNodes = {}
+		table.insert(physicalNodes,layerNodes)
+		for node=1,#self.Nodes[layer],1 do
+			local newNode = Instance.new("Part", folder)
+			newNode.Shape = Enum.PartType.Ball
+			newNode.Size = Vector3.new(2,2,2)
+			newNode.Color = Color3.new(NN:Sigmoid(self.Nodes[layer][node]),0,0)
+			newNode.Anchored = true
+			newNode.Position = Vector3.new(origin.X + xOffset*scale, origin.Y, origin.Z - zOffset*scale)
+			newNode.Material = Enum.Material.SmoothPlastic
+			table.insert(layerNodes,newNode)
+			if(layer==#self.Nodes) then
+				if(self.Nodes[layer][node]>0.9) then
+					newNode.Color = Color3.new(0, 1, 0)
+				end
+			end
+			xOffset+=1
+		end
+		xOffset=0
+		zOffset+=1
+	end
+
+	-- Generate connections
+	for layer=1,#self.Connections,1 do
+		for sourceNode=1, #self.Connections[layer],1 do
+			for destNode=1, #self.Connections[layer][sourceNode],1 do
+				local physicalSourceNode = physicalNodes[layer][sourceNode]
+				local physicalDestNode = physicalNodes[layer+1][destNode]
+				local attachmentA = Instance.new("Attachment", physicalSourceNode)
+				local attachmentB = Instance.new("Attachment", physicalDestNode)
+				local connection = Instance.new("RodConstraint",physicalDestNode)
+				connection.Attachment0 = attachmentA
+				connection.Attachment1 = attachmentB
+				connection.Visible = true
+				connection.Thickness = NN:Sigmoid(self.Connections[layer][sourceNode][destNode])/5
+			end
+		end
+	end
+
+	return folder
+end
+
+return NNModule
