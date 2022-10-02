@@ -1,0 +1,240 @@
+-- Place this script in ServerScriptService
+-- Test Driver Program
+
+local NN = require(game:GetService("ServerScriptService").NNModule).NN
+
+repeat wait() until game.Workspace
+
+-- Example 1: Define a 2 input, 1 output, 2 hidden layer NN where all nodes connect to the next layers nodes
+--[[
+local nodesArray = 
+	{
+		{0,0},
+		{0,0},
+		{0,0,0},
+		{0}
+	}
+local connectionsArray = 
+	{
+		{{1,0.5},{0.7,-0.3}},
+		{{0.1,0.25,1},{-0.9,0,1}},
+		{{0.1},{-1},{0.5}}
+	}
+
+local testNN = NN.new("TestNN",nodesArray,connectionsArray,Vector3.new(0,20,100))
+]]--
+
+
+-- Example 2: Create a random 2 input, 1 output NN and render it
+--[[
+local testNN2 = NN.newRandom("TestNN2",6,1,10,10,Vector3.new(0,20,50))
+
+-- Every 0.25 sec, forward propagate a new input and render/print it. Mutate 100 times it every second
+local count = 1
+local touchlogged = false;
+while(true) do
+	game.Workspace.SpinnyPart.Touched:Connect(function(toucher)
+		if(not touchlogged) then
+			touchlogged = true;
+			testNN2.PhysicalModelFolder:Destroy()
+			testNN2 = NN.newRandom("TestNN2",6,1,10,10,Vector3.new(0,20,50))
+			wait(1)
+			touchlogged = false;
+		end
+	end)
+	wait(0.000001)
+	count+=1
+	local metric = (-90-game.Workspace.SpinnyPart.Orientation.Y)/270 + 1
+	local metric2 = game.Workspace.SpinnyPartMotor.HingeConstraint.AngularVelocity
+	if (testNN2:ForwardPropgate({metric,metric2/2,metric2/4,metric2/8,metric2/10,metric2/12})[1][1] > 0.9) then
+		game.Workspace.TestSubject.Humanoid.Jump = true
+	end
+	if count%10==0 then
+		for i=0,100,1 do
+			testNN2:Mutate()
+		end
+	end
+	if count%20==0 then
+		game.Workspace.SpinnyPartMotor.HingeConstraint.AngularVelocity += 2*(math.random()-0.5)
+		if(game.Workspace.SpinnyPartMotor.HingeConstraint.AngularVelocity > 12 or game.Workspace.SpinnyPartMotor.HingeConstraint.AngularVelocity < 1)then
+			game.Workspace.SpinnyPartMotor.HingeConstraint.AngularVelocity = 2
+		end
+	end	
+end
+]]--
+
+-- Example 3: Jump Test Simulation
+-- Specify n simultaneous simualtions
+local n = 10
+local visible = n<=20
+local alive = n
+local generation = 0
+local maxGeneration = 8
+local invincible = false
+local survivalMap = {}
+local bestSurvivors = {}
+
+function ResetAndStartArm()
+	game.Workspace.StartBool.Value = true;
+	game.Workspace.ResetBool.Value = true;
+end
+
+function ResetAndStopArm()
+	game.Workspace.StartBool.Value = false;
+	game.Workspace.ResetBool.Value = true;
+end
+
+function ClearPhysicalNNs()
+	for i,v in pairs(game.Workspace.NNModels:GetChildren()) do
+		v:Destroy();
+	end
+	for i,v in pairs(game.Workspace.Simulations:GetChildren()) do
+		v:Destroy()
+	end
+end
+
+function evolveGeneration(survivalMap)
+	local highestSurvivalTime = survivalMap[#survivalMap][2]
+	local nextGeneration = {}
+	table.insert(bestSurvivors,survivalMap[#survivalMap])
+	
+	if generation == maxGeneration then
+		print("Max generation reached. Simulation finished.")
+		local allTimeSurvivorIndex = 1;
+		for i=2,#bestSurvivors,1 do
+			if bestSurvivors[i][2] > bestSurvivors[allTimeSurvivorIndex][2] then
+				allTimeSurvivorIndex = i
+			end
+		end
+		print(bestSurvivors)
+		print("Spawning best survivor!")
+		local bestSurv = bestSurvivors[allTimeSurvivorIndex][1]
+		bestSurv.Visible = true
+		invincible = true
+		bestSurv.Origin = Vector3.new(0,20,0)
+		bestSurv.Name = "Best Survivor!"
+		print(bestSurv)
+		spawnTestFrameFromNN("Best Survivor!",bestSurv,0)
+		return
+	end
+	
+	-- Survival of NNs based on probability
+	for i=1,#survivalMap,1 do
+		local survivalProbability = math.pow((survivalMap[i][2]/(highestSurvivalTime)),2)
+		if (math.random()<survivalProbability) then
+			--print(survivalMap[i][1].Name .. " survives!")
+			-- Let this NN make it to the next generation as well
+			table.insert(nextGeneration,survivalMap[i][1])
+			-- Generate 0-2 mutated copies of this survived NN
+			for j=1,math.random(0,2),1 do
+				local mutatedCopy = NN.newCopy(survivalMap[i][1])
+				mutatedCopy.Name = mutatedCopy.Name .. "G" .. tostring(generation+1) .. "V" .. tostring(j)
+				-- This copy can mutate 1-3 times
+				for k=1,math.random(1,3),1 do
+					mutatedCopy:Mutate()
+				end
+				table.insert(nextGeneration,mutatedCopy)
+			end
+		end
+		
+	end
+	
+	n = #nextGeneration
+	alive = n
+	generation +=1	
+	for i=1,#nextGeneration,1 do
+		spawn(function()
+			if(generation == maxGeneration) then
+				nextGeneration[i].Visible = true
+			end
+			spawnTestFrameFromNN(nextGeneration[i].Name,nextGeneration[i],10*(i-1))
+		end)
+	end
+	print("3 Seconds before next generation begin")
+	wait(3);
+	print("Test begin!")
+	ResetAndStartArm()
+end
+
+function spawnTestFrame(name,offset)
+	-- Create a test subject instance
+	survivalMap = {}
+	local testSubject = game:GetService("ReplicatedStorage").TestSubject:Clone()
+	local hitIndicator = testSubject.Hit
+	testSubject.Parent = game.Workspace.Simulations
+	testSubject.Name = "TestSubject_" .. name
+	
+	-- Create random topology NN with 3 inputs: angular velocity, angular position, and fixed bias
+	local testNN = NN.newRandom(name,3,1,4,3,Vector3.new(0,20+offset,50),visible)
+	
+	-- Link test subject jump to output of NN
+	local survivalTime = 0
+	spawn(function()
+		while(testSubject and not testSubject.Hit.Value) do
+			wait(0)
+			-- Assume output > 0.9 as true
+			testSubject.Humanoid.Jump = testNN:ForwardPropgate({(game.Workspace.SpinnyPartMotor.HingeConstraint.AngularVelocity-6)/6,NN:ScaleZPtoNP((-90-game.Workspace.SpinnyPart.Orientation.Y)/270 + 1),0})[1][1] > 0.9
+			survivalTime += 1	
+		end
+	end)
+	
+	hitIndicator.Changed:Connect(function()
+		--print(testSubject.Name .. " hit!")
+		if invincible then testSubject.Hit.Value = false return end
+		testSubject.Humanoid.Health = 0
+		table.insert(survivalMap,{testNN,survivalTime})
+		alive -= 1
+		if (alive == 0) then
+			print("Generation ".. tostring(generation) .. " Finished. All subjects hit.")
+			ClearPhysicalNNs()
+			ResetAndStopArm()
+			evolveGeneration(survivalMap)
+		end
+	end)
+end
+
+function spawnTestFrameFromNN(name,NN,offset)
+	-- Create a test subject instance
+	survivalMap = {}
+	local testSubject = game:GetService("ReplicatedStorage").TestSubject:Clone()
+	local hitIndicator = testSubject.Hit
+	testSubject.Parent = game.Workspace.Simulations
+	testSubject.Name = "TestSubject_" .. name
+
+	-- Use provided NN
+	local testNN = NN
+
+	-- Link test subject jump to output of NN
+	local survivalTime = 0
+	spawn(function()
+		while(testSubject and not testSubject.Hit.Value) do
+			wait(0)
+			-- Assume output > 0.5 as true
+			--print((game.Workspace.SpinnyPartMotor.HingeConstraint.AngularVelocity-6)/6)
+			--print((NN:ScaleZPtoNP((-90-game.Workspace.SpinnyPart.Orientation.Y)/270 + 1)))
+			testSubject.Humanoid.Jump = testNN:ForwardPropgate({(game.Workspace.SpinnyPartMotor.HingeConstraint.AngularVelocity-6)/6,NN:ScaleZPtoNP((-90-game.Workspace.SpinnyPart.Orientation.Y)/270 + 1),0})[1][1] > 0.5
+			survivalTime += 1	
+		end
+	end)
+
+	hitIndicator.Changed:Connect(function()
+		--print(testSubject.Name .. " hit!")
+		if invincible then testSubject.Hit.Value = false return end
+		testSubject.Humanoid.Health = 0
+		table.insert(survivalMap,{testNN,survivalTime})
+		alive -= 1
+		if (alive == 0) then
+			print("Generation ".. tostring(generation) .. " Finished. All subjects hit.")
+			ClearPhysicalNNs()
+			ResetAndStopArm()
+			evolveGeneration(survivalMap)
+		end
+	end)
+end
+
+-- Create n simultaneous test frames
+for i=1,n,1 do
+	spawn(function()
+		spawnTestFrame("Test" .. tostring(i),5*(i-1))
+	end)
+end
