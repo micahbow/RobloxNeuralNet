@@ -14,4 +14,6 @@ The module code is within a single modulescript which can be called using `requi
 - `NNModule.NN:Render` Generate a physical model of the neural network with color coding and connection thicknesses to convey weights/values
 
 Provided are some other scripts that were used to test the module in a NEAT application,  but you must first construct a simple testing rig:
+
+
 ![IMG_5309](https://user-images.githubusercontent.com/80184148/193438488-e83f70c3-4fab-47fb-9382-0489eb2e2023.gif)
